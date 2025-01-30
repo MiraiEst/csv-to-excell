@@ -4,18 +4,15 @@ import io
 import uuid
 from openpyxl import load_workbook
 
-def transform_csv_to_excel_with_template(csv_data, template_file, selected_columns, column_mapping, selected_category, sheet_name):
-    """
-    Memasukkan data CSV ke dalam template Excel yang diunggah pengguna.
+def transform_csv_to_excel_with_mapping(csv_data, template_file, column_mapping, selected_category, sheet_name):
+    """ 
+    Masukkan data CSV ke kolom yang dipilih di template Excel.
     """
 
-    if csv_data is None or csv_data.size == 0:
-        st.error("File CSV yang diunggah kosong! Silakan unggah file dengan data.")
-        st.stop()
-
+    # Cek apakah CSV kosong
     try:
-        csv_text = io.StringIO(csv_data.getvalue().decode("utf-8"))  # Konversi ke teks
-        data = pd.read_csv(csv_text, encoding="utf-8")  # Default UTF-8
+        csv_text = io.StringIO(csv_data.getvalue().decode("utf-8"))  
+        data = pd.read_csv(csv_text)
         if data.empty:
             st.error("File CSV tidak mengandung data!")
             st.stop()
@@ -23,44 +20,33 @@ def transform_csv_to_excel_with_template(csv_data, template_file, selected_colum
         st.error("File CSV kosong atau tidak valid!")
         st.stop()
     except UnicodeDecodeError:
-        try:
-            data = pd.read_csv(io.StringIO(csv_data.getvalue().decode("latin1")), encoding="latin1")
-        except Exception:
-            st.error("Format encoding file tidak didukung! Coba simpan ulang file dengan UTF-8.")
-            st.stop()
-
-    # Pastikan kolom yang dipilih ada dalam CSV
-    missing_columns = [col for col in selected_columns if col not in data.columns]
-    if missing_columns:
-        st.error(f"Kolom berikut tidak ditemukan dalam CSV: {', '.join(missing_columns)}")
+        st.error("Format encoding file tidak didukung! Coba simpan ulang file dengan UTF-8.")
         st.stop()
 
-    # Pilih hanya kolom yang dipilih pengguna
-    csv_df = data[selected_columns]
-
-    # Filter berdasarkan kategori yang dipilih
-    if selected_category != "Semua" and "Segment_Category" in csv_df.columns:
-        csv_df = csv_df[csv_df["Segment_Category"] == selected_category]
-
-    # Ganti nama kolom sesuai pemetaan
-    csv_df = csv_df.rename(columns=column_mapping)
+    # Filter berdasarkan kategori jika ada
+    if selected_category != "Semua" and "Segment_Category" in data.columns:
+        data = data[data["Segment_Category"] == selected_category]
 
     # Buka template Excel
     template_bytes = io.BytesIO(template_file.getvalue())  
     book = load_workbook(template_bytes)  
 
-    # Pastikan sheet tersedia
+    # Cek apakah sheet tersedia
     if sheet_name not in book.sheetnames:
         return None, f"Sheet '{sheet_name}' tidak ditemukan dalam template!"
 
     sheet = book[sheet_name]  
 
-    # Masukkan data ke sheet (dimulai dari baris kedua agar tidak menimpa header)
-    for r_idx, row in enumerate(csv_df.itertuples(index=False), start=2):
-        for c_idx, value in enumerate(row, start=1):
-            sheet.cell(row=r_idx, column=c_idx, value=value)
+    # Masukkan data ke sheet sesuai mapping
+    row_idx = 2  # Mulai dari baris kedua (agar tidak menimpa header)
+    for _, row in data.iterrows():
+        for csv_col, excel_col in column_mapping.items():
+            if csv_col in data.columns:
+                col_idx = list(column_mapping.values()).index(excel_col) + 1  # Posisi kolom di Excel
+                sheet.cell(row=row_idx, column=col_idx, value=row[csv_col])
+        row_idx += 1
 
-    # Simpan hasil ke memori (bukan disk)
+    # Simpan hasil ke memori
     output = io.BytesIO()
     book.save(output)
     output.seek(0)
@@ -69,7 +55,7 @@ def transform_csv_to_excel_with_template(csv_data, template_file, selected_colum
 
 # ============================ STREAMLIT UI ============================ #
 
-st.title("Ekstrak Data ke Template Excel")
+st.title("Ekstrak Data CSV ke Template Excel")
 
 # **Upload file CSV**
 uploaded_csv = st.file_uploader("Upload file CSV", type=["csv"])
@@ -78,38 +64,37 @@ uploaded_csv = st.file_uploader("Upload file CSV", type=["csv"])
 uploaded_template = st.file_uploader("Upload Template Excel", type=["xlsx"])
 
 if uploaded_csv and uploaded_template:
-    try:
-        # Membaca data CSV
-        data = pd.read_csv(uploaded_csv, encoding="utf-8")
-    except UnicodeDecodeError:
-        data = pd.read_csv(uploaded_csv, encoding="latin1")
-    except Exception:
-        st.error("Terjadi kesalahan saat membaca file CSV. Pastikan formatnya benar.")
-        st.stop()
-
-    # Menampilkan daftar kolom yang bisa dipilih
-    all_columns = data.columns.tolist()
-
-    # Pilih kolom yang ingin dimasukkan ke Excel
-    selected_columns = st.multiselect("Pilih kolom yang ingin dimasukkan", all_columns, default=all_columns[:3])
-
-    # Pemetaan nama kolom
-    column_mapping = {col: col for col in selected_columns}
-
-    # Pilihan kategori (jika 'Segment_Category' tersedia)
-    if "Segment_Category" in data.columns:
-        kategori_unik = ["Semua"] + sorted(data["Segment_Category"].dropna().unique().tolist())
-        selected_category = st.selectbox("Pilih Kategori", kategori_unik)
-    else:
-        selected_category = "Semua"
+    # Membaca CSV
+    data = pd.read_csv(uploaded_csv)
 
     # Pilih sheet dalam template Excel
     book = load_workbook(io.BytesIO(uploaded_template.getvalue()))
     sheet_name = st.selectbox("Pilih Sheet untuk Menyimpan Data", book.sheetnames)
 
+    # Ambil kolom dari Excel (header baris pertama)
+    sheet = book[sheet_name]
+    excel_columns = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1)) if cell.value]
+
+    # Ambil kolom dari CSV
+    csv_columns = data.columns.tolist()
+
+    # Mapping kolom CSV ke kolom Excel
+    column_mapping = {}
+    st.write("Cocokkan kolom CSV dengan kolom di Excel:")
+    for csv_col in csv_columns:
+        excel_col = st.selectbox(f"Pilih kolom Excel untuk `{csv_col}`", ["(Tidak digunakan)"] + excel_columns, key=csv_col)
+        if excel_col != "(Tidak digunakan)":
+            column_mapping[csv_col] = excel_col
+
+    # Pilih kategori jika ada
+    selected_category = "Semua"
+    if "Segment_Category" in data.columns:
+        kategori_unik = ["Semua"] + sorted(data["Segment_Category"].dropna().unique().tolist())
+        selected_category = st.selectbox("Pilih Kategori", kategori_unik)
+
     if st.button("Ekspor ke Template Excel"):
-        output_excel, error = transform_csv_to_excel_with_template(
-            uploaded_csv, uploaded_template, selected_columns, column_mapping, selected_category, sheet_name
+        output_excel, error = transform_csv_to_excel_with_mapping(
+            uploaded_csv, uploaded_template, column_mapping, selected_category, sheet_name
         )
 
         if error:
