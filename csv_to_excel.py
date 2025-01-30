@@ -6,7 +6,7 @@ from openpyxl import load_workbook
 
 def transform_csv_to_excel_with_mapping(csv_data, template_file, column_mapping, selected_category, sheet_name):
     """ 
-    Masukkan data CSV ke kolom yang dipilih di template Excel.
+    Masukkan data CSV ke kolom yang dipilih di template Excel (meskipun tidak bersampingan).
     """
 
     # Cek apakah CSV kosong
@@ -37,12 +37,15 @@ def transform_csv_to_excel_with_mapping(csv_data, template_file, column_mapping,
 
     sheet = book[sheet_name]  
 
-    # Masukkan data ke sheet sesuai mapping
-    row_idx = 2  # Mulai dari baris kedua (agar tidak menimpa header)
+    # Dapatkan posisi kolom di Excel berdasarkan header baris pertama
+    excel_columns = {cell.value: cell.column for cell in next(sheet.iter_rows(min_row=1, max_row=1)) if cell.value}
+
+    # Mulai memasukkan data dari baris kedua
+    row_idx = 2  
     for _, row in data.iterrows():
         for csv_col, excel_col in column_mapping.items():
-            if csv_col in data.columns:
-                col_idx = list(column_mapping.values()).index(excel_col) + 1  # Posisi kolom di Excel
+            if csv_col in data.columns and excel_col in excel_columns:
+                col_idx = excel_columns[excel_col]  # Ambil posisi kolom di Excel berdasarkan header
                 sheet.cell(row=row_idx, column=col_idx, value=row[csv_col])
         row_idx += 1
 
