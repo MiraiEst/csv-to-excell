@@ -14,8 +14,8 @@ def transform_csv_to_excel_with_template(csv_data, template_file, selected_colum
         st.stop()
 
     try:
-        csv_text = io.StringIO(csv_data.getvalue().decode("utf-8"))  # Pastikan bisa dibaca
-        data = pd.read_csv(csv_text)
+        csv_text = io.StringIO(csv_data.getvalue().decode("utf-8"))  # Konversi ke teks
+        data = pd.read_csv(csv_text, encoding="utf-8")  # Default UTF-8
         if data.empty:
             st.error("File CSV tidak mengandung data!")
             st.stop()
@@ -23,31 +23,37 @@ def transform_csv_to_excel_with_template(csv_data, template_file, selected_colum
         st.error("File CSV kosong atau tidak valid!")
         st.stop()
     except UnicodeDecodeError:
-        st.error("Format encoding file tidak didukung! Coba simpan ulang file dengan UTF-8.")
+        try:
+            data = pd.read_csv(io.StringIO(csv_data.getvalue().decode("latin1")), encoding="latin1")
+        except Exception:
+            st.error("Format encoding file tidak didukung! Coba simpan ulang file dengan UTF-8.")
+            st.stop()
+
+    # Pastikan kolom yang dipilih ada dalam CSV
+    missing_columns = [col for col in selected_columns if col not in data.columns]
+    if missing_columns:
+        st.error(f"Kolom berikut tidak ditemukan dalam CSV: {', '.join(missing_columns)}")
         st.stop()
 
-    # Membaca CSV sebagai DataFrame
-    csv_df = pd.read_csv(csv_data)
-
     # Pilih hanya kolom yang dipilih pengguna
-    csv_df = csv_df[selected_columns]
+    csv_df = data[selected_columns]
 
     # Filter berdasarkan kategori yang dipilih
     if selected_category != "Semua" and "Segment_Category" in csv_df.columns:
         csv_df = csv_df[csv_df["Segment_Category"] == selected_category]
 
     # Ganti nama kolom sesuai pemetaan
-    csv_df = csv_df.rename(columns={col: column_mapping.get(col, col) for col in selected_columns})
+    csv_df = csv_df.rename(columns=column_mapping)
 
     # Buka template Excel
-    template_bytes = io.BytesIO(template_file.getvalue())  # Konversi file ke BytesIO
+    template_bytes = io.BytesIO(template_file.getvalue())  
     book = load_workbook(template_bytes)  
 
-    # Pastikan sheet yang dipilih tersedia
+    # Pastikan sheet tersedia
     if sheet_name not in book.sheetnames:
         return None, f"Sheet '{sheet_name}' tidak ditemukan dalam template!"
 
-    sheet = book[sheet_name]  # Ambil sheet yang dipilih
+    sheet = book[sheet_name]  
 
     # Masukkan data ke sheet (dimulai dari baris kedua agar tidak menimpa header)
     for r_idx, row in enumerate(csv_df.itertuples(index=False), start=2):
@@ -72,8 +78,14 @@ uploaded_csv = st.file_uploader("Upload file CSV", type=["csv"])
 uploaded_template = st.file_uploader("Upload Template Excel", type=["xlsx"])
 
 if uploaded_csv and uploaded_template:
-    # Membaca data CSV
-    data = pd.read_csv(uploaded_csv)
+    try:
+        # Membaca data CSV
+        data = pd.read_csv(uploaded_csv, encoding="utf-8")
+    except UnicodeDecodeError:
+        data = pd.read_csv(uploaded_csv, encoding="latin1")
+    except Exception:
+        st.error("Terjadi kesalahan saat membaca file CSV. Pastikan formatnya benar.")
+        st.stop()
 
     # Menampilkan daftar kolom yang bisa dipilih
     all_columns = data.columns.tolist()
