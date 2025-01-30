@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import io
 import uuid
+import re
 from openpyxl import load_workbook
 
 def transform_csv_to_excel_with_mapping(csv_data, template_file, column_mapping, selected_category, sheet_name):
@@ -95,6 +96,12 @@ if uploaded_csv and uploaded_template:
         kategori_unik = ["Semua"] + sorted(data["Segment_Category"].dropna().unique().tolist())
         selected_category = st.selectbox("Pilih Kategori", kategori_unik)
 
+    # Input nama file custom
+    file_name = st.text_input("Masukkan nama file Excel (tanpa ekstensi)", "export_data")
+
+    # Pastikan nama file tidak mengandung karakter tidak valid
+    file_name = re.sub(r'[<>:"/\\|?*]', '', file_name).strip()  # Hapus karakter tidak valid
+
     if st.button("Ekspor ke Template Excel"):
         output_excel, error = transform_csv_to_excel_with_mapping(
             uploaded_csv, uploaded_template, column_mapping, selected_category, sheet_name
@@ -103,10 +110,12 @@ if uploaded_csv and uploaded_template:
         if error:
             st.error(error)
         else:
-            unique_filename = f"export_{uuid.uuid4().hex}.xlsx"
+            # Tambahkan ekstensi .xlsx
+            output_file_name = f"{file_name}.xlsx"
+
             st.download_button(
                 label="Unduh File",
                 data=output_excel,
-                file_name=unique_filename,
+                file_name=output_file_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
