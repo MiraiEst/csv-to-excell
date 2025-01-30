@@ -6,8 +6,8 @@ import re
 from datetime import datetime
 from xlsxwriter.utility import xl_col_to_name
 
+# Fungsi untuk validasi data
 def validate_data(data):
-    """Fungsi untuk validasi data"""
     warnings = []
     
     # Validasi format email
@@ -26,8 +26,8 @@ def validate_data(data):
     
     return warnings
 
+# Fungsi untuk memproses data
 def process_data(data, selected_columns, cleaning_options, filters, date_settings):
-    """Fungsi untuk memproses data dengan berbagai opsi"""
     processed_data = data[selected_columns].copy()
     
     # Handle kolom tanggal
@@ -67,8 +67,8 @@ def process_data(data, selected_columns, cleaning_options, filters, date_setting
     
     return processed_data
 
+# Fungsi untuk transformasi data
 def transform_data(data, output_format, column_mapping, excel_options):
-    """Fungsi untuk transformasi data dengan formatting Excel"""
     renamed_data = data.rename(columns=column_mapping)
     
     output = io.BytesIO()
