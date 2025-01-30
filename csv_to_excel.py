@@ -2,66 +2,93 @@ import pandas as pd
 import streamlit as st
 import io
 import uuid
+from openpyxl import load_workbook
 
-def transform_csv_to_excel(data, selected_columns, column_mapping, selected_category):
+def transform_csv_to_excel_with_template(csv_data, template_file, selected_columns, column_mapping, selected_category, sheet_name):
     """
-    Fungsi untuk memproses dan mengonversi data ke file Excel tanpa menyimpannya di server.
+    Memasukkan data CSV ke dalam template Excel yang diunggah pengguna.
     """
-    # Memilih hanya kolom yang dipilih pengguna
-    filtered_data = data[selected_columns]
+    # Membaca CSV sebagai DataFrame
+    csv_df = pd.read_csv(csv_data)
+
+    # Pilih hanya kolom yang dipilih pengguna
+    csv_df = csv_df[selected_columns]
 
     # Filter berdasarkan kategori yang dipilih
-    if selected_category != "Semua" and "Segment_Category" in selected_columns:
-        filtered_data = filtered_data[filtered_data['Segment_Category'] == selected_category]
+    if selected_category != "Semua" and "Segment_Category" in csv_df.columns:
+        csv_df = csv_df[csv_df["Segment_Category"] == selected_category]
 
-    # Mengganti nama kolom sesuai pemetaan
-    renamed_data = filtered_data.rename(columns={col: column_mapping.get(col, col) for col in selected_columns})
+    # Ganti nama kolom sesuai pemetaan
+    csv_df = csv_df.rename(columns={col: column_mapping.get(col, col) for col in selected_columns})
 
-    # Simpan ke memori (bukan file di server)
+    # Buka template Excel
+    template_bytes = io.BytesIO(template_file.getvalue())  # Konversi file ke BytesIO
+    book = load_workbook(template_bytes)  
+
+    # Pastikan sheet yang dipilih tersedia
+    if sheet_name not in book.sheetnames:
+        return None, f"Sheet '{sheet_name}' tidak ditemukan dalam template!"
+
+    sheet = book[sheet_name]  # Ambil sheet yang dipilih
+
+    # Masukkan data ke sheet (dimulai dari baris kedua agar tidak menimpa header)
+    for r_idx, row in enumerate(csv_df.itertuples(index=False), start=2):
+        for c_idx, value in enumerate(row, start=1):
+            sheet.cell(row=r_idx, column=c_idx, value=value)
+
+    # Simpan hasil ke memori (bukan disk)
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        renamed_data.to_excel(writer, index=False)
-    output.seek(0)  # Reset posisi pointer agar bisa dibaca
+    book.save(output)
+    output.seek(0)
 
-    return output
+    return output, None
 
-# Membuat UI Streamlit
-st.title("Ekstrak Data Csv ke Excel")
+# ============================ STREAMLIT UI ============================ #
 
-# **Menambahkan fitur upload file**
-uploaded_file = st.file_uploader("Upload file CSV", type=["csv"])
+st.title("Ekstrak Data ke Template Excel")
 
-if uploaded_file is not None:
-    # Membaca data dari file yang diunggah
-    data = pd.read_csv(uploaded_file)
+# **Upload file CSV**
+uploaded_csv = st.file_uploader("Upload file CSV", type=["csv"])
+
+# **Upload Template Excel**
+uploaded_template = st.file_uploader("Upload Template Excel", type=["xlsx"])
+
+if uploaded_csv and uploaded_template:
+    # Membaca data CSV
+    data = pd.read_csv(uploaded_csv)
 
     # Menampilkan daftar kolom yang bisa dipilih
     all_columns = data.columns.tolist()
-    
-    # Multiselect untuk memilih kolom
-    selected_columns = st.multiselect("Pilih kolom yang ingin diekspor", all_columns, default=all_columns[:3])
 
-    # Pemetaan kolom (jika ingin mengganti nama)
-    column_mapping = {col: col for col in selected_columns}  # Default nama kolom tetap
+    # Pilih kolom yang ingin dimasukkan ke Excel
+    selected_columns = st.multiselect("Pilih kolom yang ingin dimasukkan", all_columns, default=all_columns[:3])
 
-    # Pilihan kategori (hanya jika kolom 'Segment_Category' tersedia)
+    # Pemetaan nama kolom
+    column_mapping = {col: col for col in selected_columns}
+
+    # Pilihan kategori (jika 'Segment_Category' tersedia)
     if "Segment_Category" in data.columns:
-        kategori_unik = ["Semua"] + sorted(data['Segment_Category'].dropna().unique().tolist())
+        kategori_unik = ["Semua"] + sorted(data["Segment_Category"].dropna().unique().tolist())
         selected_category = st.selectbox("Pilih Kategori", kategori_unik)
     else:
         selected_category = "Semua"
 
-    if st.button("Ekspor ke Excel"):
-        # Generate file di memori, bukan di disk
-        output_excel = transform_csv_to_excel(data, selected_columns, column_mapping, selected_category)
+    # Pilih sheet dalam template Excel
+    book = load_workbook(io.BytesIO(uploaded_template.getvalue()))
+    sheet_name = st.selectbox("Pilih Sheet untuk Menyimpan Data", book.sheetnames)
 
-        # Nama file unik untuk menghindari konflik
-        unique_filename = f"export_{uuid.uuid4().hex}.xlsx"
-
-        # Tombol download langsung dari memori
-        st.download_button(
-            label="Unduh File",
-            data=output_excel,
-            file_name=unique_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if st.button("Ekspor ke Template Excel"):
+        output_excel, error = transform_csv_to_excel_with_template(
+            uploaded_csv, uploaded_template, selected_columns, column_mapping, selected_category, sheet_name
         )
+
+        if error:
+            st.error(error)
+        else:
+            unique_filename = f"export_{uuid.uuid4().hex}.xlsx"
+            st.download_button(
+                label="Unduh File",
+                data=output_excel,
+                file_name=unique_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
