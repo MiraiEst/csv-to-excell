@@ -26,7 +26,7 @@ def transform_csv_to_excel(data, selected_columns, column_mapping, selected_cate
     return output
 
 # Membuat UI Streamlit
-st.title("Ekstrak Data Restoran ke Excel")
+st.title("Ekstrak Data Csv ke Excel")
 
 # **Menambahkan fitur upload file**
 uploaded_file = st.file_uploader("Upload file CSV", type=["csv"])
