@@ -8,6 +8,24 @@ def transform_csv_to_excel_with_template(csv_data, template_file, selected_colum
     """
     Memasukkan data CSV ke dalam template Excel yang diunggah pengguna.
     """
+
+    if csv_data is None or csv_data.size == 0:
+        st.error("File CSV yang diunggah kosong! Silakan unggah file dengan data.")
+        st.stop()
+
+    try:
+        csv_text = io.StringIO(csv_data.getvalue().decode("utf-8"))  # Pastikan bisa dibaca
+        data = pd.read_csv(csv_text)
+        if data.empty:
+            st.error("File CSV tidak mengandung data!")
+            st.stop()
+    except pd.errors.EmptyDataError:
+        st.error("File CSV kosong atau tidak valid!")
+        st.stop()
+    except UnicodeDecodeError:
+        st.error("Format encoding file tidak didukung! Coba simpan ulang file dengan UTF-8.")
+        st.stop()
+
     # Membaca CSV sebagai DataFrame
     csv_df = pd.read_csv(csv_data)
 
