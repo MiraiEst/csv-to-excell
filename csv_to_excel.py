@@ -121,5 +121,20 @@ if uploaded_file is not None:
             st.dataframe(processed_data.head(8), use_container_width=True)
             st.caption(f"Menampilkan 8 dari {len(processed_data)} baris")
 
+        # Konversi ke Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            processed_data.to_excel(writer, index=False, sheet_name="Data")
+            writer.save()
+
+        # Download Button
+        output.seek(0)
+        st.download_button(
+            label="💾 Download Excel",
+            data=output,
+            file_name="processed_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
 else:
     st.info("📢 Silahkan upload file CSV untuk memulai")
