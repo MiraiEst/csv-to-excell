@@ -125,7 +125,7 @@ if uploaded_file is not None:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
             processed_data.to_excel(writer, index=False, sheet_name="Data")
-            writer.save()
+            writer.close()
 
         # Download Button
         output.seek(0)
