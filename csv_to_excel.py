@@ -21,14 +21,14 @@ def validate_data(data):
     # Validasi format email
     email_cols = [col for col in data.columns if 'email' in col.lower()]
     for col in email_cols:
-        invalid_emails = data[col][~data[col].apply(lambda x: re.match(r"[^@]+@[^@]+\.[^@]+", str(x)))]
+        invalid_emails = data[col][~data[col].astype(str).apply(lambda x: re.match(r"[^@]+@[^@]+\.[^@]+", x))]
         if not invalid_emails.empty:
             warnings.append(f"Format email tidak valid di kolom {col}: {len(invalid_emails)} entri")
     
     # Validasi nomor telepon
     phone_cols = [col for col in data.columns if 'phone' in col.lower()]
     for col in phone_cols:
-        invalid_phones = data[col][~data[col].apply(lambda x: re.match(r"^\+?[0-9\s\-()]+$", str(x)))]
+        invalid_phones = data[col][~data[col].astype(str).apply(lambda x: re.match(r"^\+?[0-9\s\-()]+$", x))]
 
         if not invalid_phones.empty:
             warnings.append(f"Format telepon tidak valid di kolom {col}: {len(invalid_phones)} entri")
@@ -46,15 +46,16 @@ if uploaded_file is not None:
     try:
         # Deteksi encoding file
         detected_encoding = detect_encoding(uploaded_file)
+        st.write(f"📄 Encoding terdeteksi: `{detected_encoding}`")
 
         # Coba membaca file CSV dengan encoding yang terdeteksi
-        data = pd.read_csv(uploaded_file, encoding=detected_encoding, errors="replace")
-
-    except UnicodeDecodeError:
-        st.error("Gagal membaca file. Coba gunakan format encoding lain seperti UTF-8, Latin-1, atau Windows-1252.")
-        st.stop()
+        try:
+            data = pd.read_csv(uploaded_file, encoding=detected_encoding)
+        except UnicodeDecodeError:
+            st.warning("⚠️ Encoding utama gagal, mencoba dengan `latin1`...")
+            data = pd.read_csv(uploaded_file, encoding="latin1")
     except Exception as e:
-        st.error(f"Terjadi kesalahan saat membaca file: {str(e)}")
+        st.error(f"❌ Terjadi kesalahan saat membaca file: {str(e)}")
         st.stop()
 
     all_columns = data.columns.tolist()
