@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import io
 import chardet
+import re
 from datetime import datetime
 
 # Fungsi untuk validasi data
@@ -20,7 +21,6 @@ def validate_data(data):
         invalid_phones = data[col][~data[col].apply(lambda x: re.match(r"^\+?[0-9\s\-()]+$", str(x)))]
         if not invalid_phones.empty:
             warnings.append(f"Format telepon tidak valid di kolom {col}: {len(invalid_phones)} entri")
-    
     return warnings
 
 # Fungsi untuk memproses data
@@ -61,7 +61,6 @@ def process_data(data, selected_columns, cleaning_options, filters, date_setting
                                            (processed_data[col] <= f['max'])]
         elif f['type'] == 'categorical':
             processed_data = processed_data[processed_data[col].isin(f['values'])]
-    
     return processed_data
 
 # Fungsi untuk transformasi data
@@ -115,41 +114,65 @@ def transform_data(data, output_format, column_mapping, excel_options):
     output.seek(0)
     return output, mime_type, file_ext
 
-# Fungsi untuk membaca CSV dengan penanganan error
+# Fungsi untuk membaca CSV dengan penanganan error yang diperbarui
 def read_csv_with_encoding(uploaded_file):
     # Baca file untuk deteksi encoding
     raw_data = uploaded_file.read()
     result = chardet.detect(raw_data)
-    detected_encoding = result['encoding']  # Simpan encoding yang terdeteksi
+    detected_encoding = result['encoding']
     uploaded_file.seek(0)
 
-    # Daftar delimiter yang mungkin
-    delimiters = [',', ';', '\t', '|']
-    
-    # Coba berbagai kombinasi encoding dan delimiter
+    # Deteksi delimiter menggunakan pandas Sniffer
+    try:
+        sample = uploaded_file.read(1024).decode(detected_encoding)
+        dialect = pd.io.parsers.Sniffer().sniff(sample)
+        delimiters = [dialect.delimiter]
+        uploaded_file.seek(0)
+    except:
+        delimiters = [',', ';', '\t', '|', ':', '~', ' ']  # Delimiter alternatif
+
+    # Coba berbagai delimiter
     for delimiter in delimiters:
         try:
             uploaded_file.seek(0)
             data = pd.read_csv(
                 uploaded_file,
                 encoding=detected_encoding,
-                delimiter=delimiter,
+                sep=delimiter,
                 engine='python',
-                on_bad_lines='skip'
+                on_bad_lines='skip',
+                quotechar='"',
+                escapechar='\\'
             )
-            if not data.empty:
-                st.session_state.delimiter = delimiter  # Simpan delimiter yang berhasil
-                return data, detected_encoding  # Kembalikan data dan encoding
+            if not data.empty and len(data.columns) > 1:
+                st.session_state.delimiter = delimiter
+                return data, detected_encoding
         except Exception as e:
             continue
 
-    # Jika semua gagal
-    st.error(f"Gagal membaca file CSV. Pastikan:\n1. Encoding file benar ({detected_encoding})\n2. Delimiter konsisten\n3. Tidak ada baris yang rusak")
-    st.stop()
+    # Jika semua gagal, tampilkan opsi manual
+    st.error("⚠️ Gagal mendeteksi delimiter otomatis!")
+    manual_delimiter = st.text_input("Masukkan delimiter manual:", ',')
+    
+    try:
+        uploaded_file.seek(0)
+        data = pd.read_csv(
+            uploaded_file,
+            encoding=detected_encoding,
+            sep=manual_delimiter,
+            engine='python',
+            on_bad_lines='skip'
+        )
+        if not data.empty:
+            st.session_state.delimiter = manual_delimiter
+            return data, detected_encoding
+    except Exception as e:
+        st.error(f"Tetap gagal: {str(e)}")
+        st.stop()
 
 # UI Streamlit
-st.set_page_config(page_title="Data Exporter", layout="centered")
-st.title("📁 Data Exporter")
+st.set_page_config(page_title="Data Exporter Pro", layout="centered")
+st.title("📁 Data Exporter Pro")
 
 # Upload file
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"], help="Upload file CSV maksimal 100MB")
@@ -157,89 +180,116 @@ uploaded_file = st.file_uploader("Upload CSV", type=["csv"], help="Upload file C
 if uploaded_file is not None:
     try:
         # Baca file dengan penanganan error
-        data, detected_encoding = read_csv_with_encoding(uploaded_file)  # Terima data dan encoding
+        data, detected_encoding = read_csv_with_encoding(uploaded_file)
         
-        # Tampilkan informasi file
-        st.success(f"File berhasil dibaca dengan encoding {detected_encoding} dan delimiter '{st.session_state.get('delimiter', 'auto')}'")
+        # Tampilkan preview data mentah
+        with st.expander("🔍 Preview Data Mentah (Cek Pemisah Kolom)"):
+            cols = st.columns(2)
+            cols[0].write("5 Baris Pertama:")
+            cols[0].dataframe(data.head(), use_container_width=True)
+            cols[1].write("Informasi File:")
+            cols[1].json({
+                "Encoding": detected_encoding,
+                "Delimiter": st.session_state.get('delimiter', 'auto'),
+                "Jumlah Baris": len(data),
+                "Jumlah Kolom": len(data.columns)
+            })
         
-        # Lanjutkan proses
-        all_columns = data.columns.tolist()
-        
-        # Sidebar Settings
-        with st.sidebar:
-            st.header("⚙️ Pengaturan")
-            
-            with st.expander("Pembersihan Data"):
-                cleaning_options = {
-                    'handle_missing': st.radio("Data Kosong",
-                                              ['Pertahankan', 'Hapus Baris', 'Isi dengan Nilai']),
-                    'remove_duplicates': st.checkbox("Hapus Duplikat")
-                }
+    # Sidebar Settings
+            with st.sidebar:
+                st.header("⚙️ Pengaturan")
                 
-            with st.expander("Format Excel"):
-                excel_options = {
-                    'auto_width': st.checkbox("Auto Lebar Kolom", True),
-                    'header_color': st.color_picker("Warna Header", '#4F81BD'),
-                    'freeze_header': st.checkbox("Freeze Header", True)
-                }
+                with st.expander("Pembersihan Data"):
+                    cleaning_options = {
+                        'handle_missing': st.radio("Data Kosong",
+                                                ['Pertahankan', 'Hapus Baris', 'Isi dengan Nilai']),
+                        'remove_duplicates': st.checkbox("Hapus Duplikat")
+                    }
+                    
+                with st.expander("Format Excel"):
+                    excel_options = {
+                        'auto_width': st.checkbox("Auto Lebar Kolom", True),
+                        'header_color': st.color_picker("Warna Header", '#4F81BD'),
+                        'freeze_header': st.checkbox("Freeze Header", True)
+                    }
 
-        # Main Content
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            # Kolom dan Filter
-            selected_columns = st.multiselect("Pilih Kolom", all_columns, default=all_columns)
-            
-            if selected_columns:
-                with st.expander("Filter Data", expanded=True):
-                    filters = {}
-                    cols = st.columns(2)
-                    for i, col in enumerate(selected_columns):
-                        with cols[i % 2]:
-                            if pd.api.types.is_numeric_dtype(data[col]):
-                                min_val = float(data[col].min())
-                                max_val = float(data[col].max())
-                                selected_range = st.slider(
-                                    f"**{col}**",
-                                    min_val,
-                                    max_val,
-                                    (min_val, max_val)
-                                )
-                                filters[col] = {'type': 'numeric', 'min': selected_range[0], 'max': selected_range[1]}
-                            else:
-                                unique_vals = data[col].unique().tolist()
-                                selected_vals = st.multiselect(
-                                    f"**{col}**",
-                                    unique_vals,
-                                    default=unique_vals
-                                )
-                                filters[col] = {'type': 'categorical', 'values': selected_vals}
+            # Main Content
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                # Kolom dan Filter
+                selected_columns = st.multiselect("Pilih Kolom", all_columns, default=all_columns)
+                
+                if selected_columns:
+                    with st.expander("Filter Data", expanded=True):
+                        filters = {}
+                        cols = st.columns(2)
+                        for i, col in enumerate(selected_columns):
+                            with cols[i % 2]:
+                                if pd.api.types.is_numeric_dtype(data[col]):
+                                    min_val = float(data[col].min())
+                                    max_val = float(data[col].max())
+                                    selected_range = st.slider(
+                                        f"**{col}**",
+                                        min_val,
+                                        max_val,
+                                        (min_val, max_val)
+                                    )
+                                    filters[col] = {'type': 'numeric', 'min': selected_range[0], 'max': selected_range[1]}
+                                else:
+                                    unique_vals = data[col].unique().tolist()
+                                    selected_vals = st.multiselect(
+                                        f"**{col}**",
+                                        unique_vals,
+                                        default=unique_vals
+                                    )
+                                    filters[col] = {'type': 'categorical', 'values': selected_vals}
 
-        with col2:
-            # Tanggal dan Export
-            date_settings = {}
-            if selected_columns:
-                with st.expander("Pengaturan Tanggal"):
+            with col2:
+                # Tanggal dan Export
+                date_settings = {}
+                if selected_columns:
+                    with st.expander("Pengaturan Tanggal"):
+                        for col in selected_columns:
+                            if pd.api.types.is_datetime64_any_dtype(data[col]) or data[col].astype(str).str.contains(r'\d{4}-\d{2}-\d{2}').any():
+                                date_settings[col] = {
+                                    'is_date': st.checkbox(f"Tanggal: {col}", True),
+                                    'start_date': st.date_input(f"Mulai {col}", pd.to_datetime(data[col]).min()),
+                                    'end_date': st.date_input(f"Akhir {col}", pd.to_datetime(data[col]).max()),
+                                    'date_format': st.selectbox(f"Format {col}", ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"])
+                                }
+
+                with st.expander("Pengaturan Export"):
+                    output_format = st.radio("Format", ['Excel', 'CSV', 'JSON'])
+                    output_name = st.text_input("Nama File", "data_export")
+                    
+                    column_mapping = {}
                     for col in selected_columns:
-                        if pd.api.types.is_datetime64_any_dtype(data[col]) or data[col].astype(str).str.contains(r'\d{4}-\d{2}-\d{2}').any():
-                            date_settings[col] = {
-                                'is_date': st.checkbox(f"Tanggal: {col}", True),
-                                'start_date': st.date_input(f"Mulai {col}", pd.to_datetime(data[col]).min()),
-                                'end_date': st.date_input(f"Akhir {col}", pd.to_datetime(data[col]).max()),
-                                'date_format': st.selectbox(f"Format {col}", ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"])
-                            }
+                        column_mapping[col] = st.text_input(
+                            f"Rename '{col}'",
+                            value=col
+                        )
 
-            with st.expander("Pengaturan Export"):
-                output_format = st.radio("Format", ['Excel', 'CSV', 'JSON'])
-                output_name = st.text_input("Nama File", "data_export")
-                
-                column_mapping = {}
-                for col in selected_columns:
-                    column_mapping[col] = st.text_input(
-                        f"Rename '{col}'",
-                        value=col
-                    )
+        # Tambahan fitur parsing ulang manual
+        if len(data.columns) == 1:
+            st.warning("Kolom tidak terpisah dengan benar!")
+            with st.expander("⚠️ Perbaiki Pemisah Kolom"):
+                new_delimiter = st.text_input("Masukkan delimiter baru:", st.session_state.get('delimiter', ','))
+                if st.button("Coba Parsing Ulang"):
+                    try:
+                        uploaded_file.seek(0)
+                        data = pd.read_csv(
+                            uploaded_file,
+                            encoding=detected_encoding,
+                            sep=new_delimiter,
+                            engine='python',
+                            on_bad_lines='skip'
+                        )
+                        st.session_state.delimiter = new_delimiter
+                        st.experimental_rerun()
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
-        # Proses dan Validasi
+         # Proses dan Validasi
         if selected_columns:
             processed_data = process_data(data, selected_columns, cleaning_options, filters, date_settings)
             
