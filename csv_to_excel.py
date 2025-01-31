@@ -7,17 +7,112 @@ from datetime import datetime
 # Fungsi untuk validasi data
 def validate_data(data):
     warnings = []
-    # ... (kode validasi tetap sama)
+    # Validasi format email
+    email_cols = [col for col in data.columns if 'email' in col.lower()]
+    for col in email_cols:
+        invalid_emails = data[col][~data[col].apply(lambda x: re.match(r"[^@]+@[^@]+\.[^@]+", str(x)))]
+        if not invalid_emails.empty:
+            warnings.append(f"Format email tidak valid di kolom {col}: {len(invalid_emails)} entri")
+    
+    # Validasi nomor telepon
+    phone_cols = [col for col in data.columns if 'phone' in col.lower()]
+    for col in phone_cols:
+        invalid_phones = data[col][~data[col].apply(lambda x: re.match(r"^\+?[0-9\s\-()]+$", str(x)))]
+        if not invalid_phones.empty:
+            warnings.append(f"Format telepon tidak valid di kolom {col}: {len(invalid_phones)} entri")
+    
     return warnings
 
 # Fungsi untuk memproses data
 def process_data(data, selected_columns, cleaning_options, filters, date_settings):
-    # ... (kode proses tetap sama)
+    processed_data = data[selected_columns].copy()
+    
+    # Handle kolom tanggal
+    for col, settings in date_settings.items():
+        if settings['is_date']:
+            try:
+                processed_data[col] = pd.to_datetime(processed_data[col])
+                processed_data = processed_data[
+                    (processed_data[col] >= pd.to_datetime(settings['start_date'])) &
+                    (processed_data[col] <= pd.to_datetime(settings['end_date']))
+                ]
+                processed_data[col] = processed_data[col].dt.strftime(settings['date_format'])
+            except:
+                st.warning(f"Gagal memproses kolom tanggal {col}")
+    
+    # Handle missing values
+    if cleaning_options['handle_missing'] == 'Hapus Baris':
+        processed_data = processed_data.dropna()
+    elif cleaning_options['handle_missing'] == 'Isi dengan Nilai':
+        for col in selected_columns:
+            if processed_data[col].dtype == 'object':
+                processed_data[col].fillna('Tidak Diketahui', inplace=True)
+            else:
+                processed_data[col].fillna(0, inplace=True)
+    
+    # Hapus duplikat
+    if cleaning_options['remove_duplicates']:
+        processed_data = processed_data.drop_duplicates()
+    
+    # Terapkan filter
+    for col, f in filters.items():
+        if f['type'] == 'numeric':
+            processed_data = processed_data[(processed_data[col] >= f['min']) & 
+                                           (processed_data[col] <= f['max'])]
+        elif f['type'] == 'categorical':
+            processed_data = processed_data[processed_data[col].isin(f['values'])]
+    
     return processed_data
 
 # Fungsi untuk transformasi data
 def transform_data(data, output_format, column_mapping, excel_options):
-    # ... (kode transformasi tetap sama)
+    renamed_data = data.rename(columns=column_mapping)
+    
+    output = io.BytesIO()
+    
+    if output_format == 'Excel':
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            renamed_data.to_excel(writer, index=False)
+            
+            # Excel formatting
+            workbook = writer.book
+            worksheet = writer.sheets['Sheet1']
+            
+            # Auto-adjust column width
+            if excel_options['auto_width']:
+                for idx, col in enumerate(renamed_data.columns):
+                    max_len = max((
+                        renamed_data[col].astype(str).map(len).max(),
+                        len(str(col))
+                    )) + 2
+                    worksheet.set_column(idx, idx, max_len)
+            
+            # Header formatting
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'fg_color': excel_options['header_color'],
+                'border': 1
+            })
+            
+            for col_num, value in enumerate(renamed_data.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+            
+        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        file_ext = "xlsx"
+    
+    elif output_format == 'CSV':
+        renamed_data.to_csv(output, index=False)
+        mime_type = "text/csv"
+        file_ext = "csv"
+    
+    elif output_format == 'JSON':
+        output.write(renamed_data.to_json(orient='records').encode())
+        mime_type = "application/json"
+        file_ext = "json"
+    
+    output.seek(0)
     return output, mime_type, file_ext
 
 # Fungsi untuk membaca CSV dengan penanganan error
