@@ -65,54 +65,63 @@ def process_data(data, selected_columns, cleaning_options, filters, date_setting
 
 # Fungsi untuk transformasi data
 def transform_data(data, output_format, column_mapping, excel_options):
-    renamed_data = data.rename(columns=column_mapping)
-    
-    output = io.BytesIO()
-    
-    if output_format == 'Excel':
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            renamed_data.to_excel(writer, index=False)
+    try:
+        renamed_data = data.rename(columns=column_mapping)
+        
+        # Validasi final data
+        if renamed_data.empty:
+            raise ValueError("Dataframe kosong setelah rename kolom")
             
-            # Excel formatting
-            workbook = writer.book
-            worksheet = writer.sheets['Sheet1']
+        output = io.BytesIO()
+        
+        if output_format == 'Excel':
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                # Convert semua data ke string untuk menghindari error format
+                renamed_data.astype(str).to_excel(writer, index=False)
             
-            # Auto-adjust column width
-            if excel_options['auto_width']:
-                for idx, col in enumerate(renamed_data.columns):
-                    max_len = max((
-                        renamed_data[col].astype(str).map(len).max(),
-                        len(str(col))
-                    )) + 2
-                    worksheet.set_column(idx, idx, max_len)
-            
-            # Header formatting
-            header_format = workbook.add_format({
-                'bold': True,
-                'text_wrap': True,
-                'valign': 'top',
-                'fg_color': excel_options['header_color'],
-                'border': 1
-            })
-            
-            for col_num, value in enumerate(renamed_data.columns.values):
-                worksheet.write(0, col_num, value, header_format)
-            
-        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        file_ext = "xlsx"
-    
-    elif output_format == 'CSV':
-        renamed_data.to_csv(output, index=False)
-        mime_type = "text/csv"
-        file_ext = "csv"
-    
-    elif output_format == 'JSON':
-        output.write(renamed_data.to_json(orient='records').encode())
-        mime_type = "application/json"
-        file_ext = "json"
-    
-    output.seek(0)
-    return output, mime_type, file_ext
+                # Excel formatting
+                workbook = writer.book
+                worksheet = writer.sheets['Sheet1']
+                
+                # Auto-adjust column width
+                if excel_options['auto_width']:
+                    for idx, col in enumerate(renamed_data.columns):
+                        max_len = max((
+                            renamed_data[col].astype(str).map(len).max(),
+                            len(str(col))
+                        )) + 2
+                        worksheet.set_column(idx, idx, max_len)
+                
+                # Header formatting
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'fg_color': excel_options['header_color'],
+                    'border': 1
+                })
+                
+                for col_num, value in enumerate(renamed_data.columns.values):
+                    worksheet.write(0, col_num, value, header_format)
+                
+            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_ext = "xlsx"
+        
+        elif output_format == 'CSV':
+            renamed_data.to_csv(output, index=False)
+            mime_type = "text/csv"
+            file_ext = "csv"
+        
+        elif output_format == 'JSON':
+            output.write(renamed_data.to_json(orient='records').encode())
+            mime_type = "application/json"
+            file_ext = "json"
+        
+        output.seek(0)
+        return output, mime_type, file_ext
+    except Exception as e:
+        st.error(f"Error transform data: {str(e)}")
+        raise
 
 # Fungsi untuk membaca CSV dengan penanganan error yang diperbarui
 def read_csv_with_encoding(uploaded_file):
@@ -169,6 +178,9 @@ def read_csv_with_encoding(uploaded_file):
     except Exception as e:
         st.error(f"Tetap gagal: {str(e)}")
         st.stop()
+    
+    data = data.loc[:, ~data.columns.str.contains('^Unnamed')] 
+    return data, detected_encoding
 
 # UI Streamlit
 st.set_page_config(page_title="Data Exporter Pro", layout="centered")
@@ -230,16 +242,17 @@ if uploaded_file is not None:
                         with cols[i % 2]:
                             # Perbaikan untuk kolom numerik
                             if pd.api.types.is_numeric_dtype(data[col]):
+                                # Konversi ke numeric dan handle invalid values
                                 numeric_series = pd.to_numeric(data[col], errors='coerce').dropna()
                                 
                                 if not numeric_series.empty:
                                     min_val = float(numeric_series.min())
                                     max_val = float(numeric_series.max())
                                     
-                                    # Handle min == max case
+                                    # Handle kasus min == max
                                     if min_val == max_val:
-                                        min_val -= 1
-                                        max_val += 1
+                                        min_val = min_val - 1 if min_val != 0 else 0
+                                        max_val = max_val + 1
                                         
                                     selected_range = st.slider(
                                         f"**{col}**",
@@ -248,14 +261,10 @@ if uploaded_file is not None:
                                         (min_val, max_val),
                                         key=f"slider_{col}"
                                     )
-                                    filters[col] = {
-                                        'type': 'numeric',
-                                        'min': selected_range[0],
-                                        'max': selected_range[1]
-                                    }
+                                    filters[col] = {'type': 'numeric', 'min': selected_range[0], 'max': selected_range[1]}
                                 else:
-                                    st.warning(f"Kolom {col} tidak mengandung data numerik valid")
-                                    filters[col] = {'type': 'numeric', 'min': 0, 'max': 0}
+                                    st.warning(f"Kolom {col} diabaikan: Tidak mengandung data numerik valid")
+                                    continue  # Lewati kolom ini
                             else:
                                 unique_vals = data[col].unique().tolist()
                                 selected_vals = st.multiselect(
@@ -335,12 +344,25 @@ if uploaded_file is not None:
             if st.button("🔼 Export Data", type="primary", use_container_width=True):
                 with st.spinner("Memproses..."):
                     try:
+                        # Cek apakah ada data yang akan di-export
+                        if len(processed_data) == 0:
+                            st.error("Tidak ada data yang bisa di-export setelah proses filtering!")
+                            return
+                        
+                        # Cek nama kolom final
+                        st.write("Preview Data yang akan di-export:")
+                        st.dataframe(processed_data.head(2))
+                        
                         output, mime_type, file_ext = transform_data(
                             processed_data,
                             output_format,
                             column_mapping,
                             excel_options
                         )
+                        
+                        # Simpan ke file sementara untuk verifikasi
+                        with open("debug_output.xlsx", "wb") as f:
+                            f.write(output.getvalue())
                         
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         filename = f"{output_name}_{timestamp}.{file_ext}"
@@ -356,6 +378,8 @@ if uploaded_file is not None:
                         
                     except Exception as e:
                         st.error(f"Gagal export: {str(e)}")
+                        st.write("Detail Error:")
+                        st.code(str(e), language='python')
 
     except Exception as e:
         st.error(f"Terjadi kesalahan: {str(e)}")
