@@ -195,68 +195,71 @@ if uploaded_file is not None:
                 "Jumlah Kolom": len(data.columns)
             })
         
-    # Sidebar Settings
-            with st.sidebar:
-                st.header("⚙️ Pengaturan")
+        # Definisikan all_columns di sini
+        all_columns = data.columns.tolist()
+        
+        # Sidebar Settings
+        with st.sidebar:
+            st.header("⚙️ Pengaturan")
+            
+            with st.expander("Pembersihan Data"):
+                cleaning_options = {
+                    'handle_missing': st.radio("Data Kosong",
+                                              ['Pertahankan', 'Hapus Baris', 'Isi dengan Nilai']),
+                    'remove_duplicates': st.checkbox("Hapus Duplikat")
+                }
                 
-                with st.expander("Pembersihan Data"):
-                    cleaning_options = {
-                        'handle_missing': st.radio("Data Kosong",
-                                                ['Pertahankan', 'Hapus Baris', 'Isi dengan Nilai']),
-                        'remove_duplicates': st.checkbox("Hapus Duplikat")
-                    }
-                    
-                with st.expander("Format Excel"):
-                    excel_options = {
-                        'auto_width': st.checkbox("Auto Lebar Kolom", True),
-                        'header_color': st.color_picker("Warna Header", '#4F81BD'),
-                        'freeze_header': st.checkbox("Freeze Header", True)
-                    }
+            with st.expander("Format Excel"):
+                excel_options = {
+                    'auto_width': st.checkbox("Auto Lebar Kolom", True),
+                    'header_color': st.color_picker("Warna Header", '#4F81BD'),
+                    'freeze_header': st.checkbox("Freeze Header", True)
+                }
 
-            # Main Content
-            col1, col2 = st.columns([3, 2])
-            with col1:
-                # Kolom dan Filter
-                selected_columns = st.multiselect("Pilih Kolom", all_columns, default=all_columns)
-                
-                if selected_columns:
-                    with st.expander("Filter Data", expanded=True):
-                        filters = {}
-                        cols = st.columns(2)
-                        for i, col in enumerate(selected_columns):
-                            with cols[i % 2]:
-                                if pd.api.types.is_numeric_dtype(data[col]):
-                                    min_val = float(data[col].min())
-                                    max_val = float(data[col].max())
-                                    selected_range = st.slider(
-                                        f"**{col}**",
-                                        min_val,
-                                        max_val,
-                                        (min_val, max_val)
-                                    )
-                                    filters[col] = {'type': 'numeric', 'min': selected_range[0], 'max': selected_range[1]}
-                                else:
-                                    unique_vals = data[col].unique().tolist()
-                                    selected_vals = st.multiselect(
-                                        f"**{col}**",
-                                        unique_vals,
-                                        default=unique_vals
-                                    )
-                                    filters[col] = {'type': 'categorical', 'values': selected_vals}
+        # Main Content
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            # Kolom dan Filter
+            selected_columns = st.multiselect("Pilih Kolom", all_columns, default=all_columns)
+            
+            if selected_columns:
+                with st.expander("Filter Data", expanded=True):
+                    filters = {}
+                    cols = st.columns(2)
+                    for i, col in enumerate(selected_columns):
+                        with cols[i % 2]:
+                            if pd.api.types.is_numeric_dtype(data[col]):
+                                min_val = float(data[col].min())
+                                max_val = float(data[col].max())
+                                selected_range = st.slider(
+                                    f"**{col}**",
+                                    min_val,
+                                    max_val,
+                                    (min_val, max_val)
+                                )
+                                filters[col] = {'type': 'numeric', 'min': selected_range[0], 'max': selected_range[1]}
+                            else:
+                                unique_vals = data[col].unique().tolist()
+                                selected_vals = st.multiselect(
+                                    f"**{col}**",
+                                    unique_vals,
+                                    default=unique_vals
+                                )
+                                filters[col] = {'type': 'categorical', 'values': selected_vals}
 
-            with col2:
-                # Tanggal dan Export
-                date_settings = {}
-                if selected_columns:
-                    with st.expander("Pengaturan Tanggal"):
-                        for col in selected_columns:
-                            if pd.api.types.is_datetime64_any_dtype(data[col]) or data[col].astype(str).str.contains(r'\d{4}-\d{2}-\d{2}').any():
-                                date_settings[col] = {
-                                    'is_date': st.checkbox(f"Tanggal: {col}", True),
-                                    'start_date': st.date_input(f"Mulai {col}", pd.to_datetime(data[col]).min()),
-                                    'end_date': st.date_input(f"Akhir {col}", pd.to_datetime(data[col]).max()),
-                                    'date_format': st.selectbox(f"Format {col}", ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"])
-                                }
+        with col2:
+            # Tanggal dan Export
+            date_settings = {}
+            if selected_columns:
+                with st.expander("Pengaturan Tanggal"):
+                    for col in selected_columns:
+                        if pd.api.types.is_datetime64_any_dtype(data[col]) or data[col].astype(str).str.contains(r'\d{4}-\d{2}-\d{2}').any():
+                            date_settings[col] = {
+                                'is_date': st.checkbox(f"Tanggal: {col}", True),
+                                'start_date': st.date_input(f"Mulai {col}", pd.to_datetime(data[col]).min()),
+                                'end_date': st.date_input(f"Akhir {col}", pd.to_datetime(data[col]).max()),
+                                'date_format': st.selectbox(f"Format {col}", ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"])
+                            }
 
                 with st.expander("Pengaturan Export"):
                     output_format = st.radio("Format", ['Excel', 'CSV', 'JSON'])
@@ -289,7 +292,7 @@ if uploaded_file is not None:
                     except Exception as e:
                         st.error(f"Error: {str(e)}")
 
-         # Proses dan Validasi
+        # Proses dan Validasi
         if selected_columns:
             processed_data = process_data(data, selected_columns, cleaning_options, filters, date_settings)
             
