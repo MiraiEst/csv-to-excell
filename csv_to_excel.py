@@ -4,6 +4,7 @@ import io
 import uuid
 import re
 import chardet  # Untuk mendeteksi encoding
+import csv
 from datetime import datetime
 from xlsxwriter.utility import xl_col_to_name
 
@@ -23,7 +24,7 @@ def validate_data(data):
     for col in email_cols:
         invalid_emails = data[col][~data[col].astype(str).apply(lambda x: re.match(r"[^@]+@[^@]+\.[^@]+", x))]
         if not invalid_emails.empty:
-            warnings.append(f"Format email tidak valid di kolom {col}: {len(invalid_emails)} entri")
+            warnings.append(f"⚠️ Format email tidak valid di kolom `{col}`: {len(invalid_emails)} entri")
     
     # Validasi nomor telepon
     phone_cols = [col for col in data.columns if 'phone' in col.lower()]
@@ -31,7 +32,7 @@ def validate_data(data):
         invalid_phones = data[col][~data[col].astype(str).apply(lambda x: re.match(r"^\+?[0-9\s\-()]+$", x))]
 
         if not invalid_phones.empty:
-            warnings.append(f"Format telepon tidak valid di kolom {col}: {len(invalid_phones)} entri")
+            warnings.append(f"⚠️ Format telepon tidak valid di kolom `{col}`: {len(invalid_phones)} entri")
     
     return warnings
 
@@ -40,7 +41,7 @@ st.set_page_config(page_title="Data Exporter", layout="centered")
 st.title("📁 Data Exporter")
 
 # Upload file
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"], help="Upload file CSV maksimal 100MB")
+uploaded_file = st.file_uploader("📂 Upload CSV", type=["csv"], help="Upload file CSV maksimal 100MB")
 
 if uploaded_file is not None:
     try:
@@ -50,10 +51,30 @@ if uploaded_file is not None:
 
         # Coba membaca file CSV dengan encoding yang terdeteksi
         try:
-            data = pd.read_csv(uploaded_file, encoding=detected_encoding)
+            data = pd.read_csv(
+                uploaded_file, 
+                encoding=detected_encoding, 
+                sep=",", 
+                on_bad_lines='skip', 
+                quoting=csv.QUOTE_NONE
+            )
         except UnicodeDecodeError:
             st.warning("⚠️ Encoding utama gagal, mencoba dengan `latin1`...")
-            data = pd.read_csv(uploaded_file, encoding="latin1")
+            data = pd.read_csv(
+                uploaded_file, 
+                encoding="latin1", 
+                sep=",", 
+                on_bad_lines='skip', 
+                quoting=csv.QUOTE_NONE
+            )
+
+        # Jika semua baris terlewati, tampilkan error
+        if data.empty:
+            st.error("❌ Semua baris CSV tidak dapat dibaca. Cek kembali formatnya!")
+            st.stop()
+        else:
+            st.success(f"✅ File berhasil dimuat ({len(data)} baris valid).")
+
     except Exception as e:
         st.error(f"❌ Terjadi kesalahan saat membaca file: {str(e)}")
         st.stop()
@@ -66,16 +87,15 @@ if uploaded_file is not None:
         
         with st.expander("Pembersihan Data"):
             cleaning_options = {
-                'handle_missing': st.radio("Data Kosong",
-                                          ['Pertahankan', 'Hapus Baris', 'Isi dengan Nilai']),
+                'handle_missing': st.radio("Data Kosong", ['Pertahankan', 'Hapus Baris', 'Isi dengan Nilai']),
                 'remove_duplicates': st.checkbox("Hapus Duplikat")
             }
             
         with st.expander("Format Excel"):
             excel_options = {
                 'auto_width': st.checkbox("Auto Lebar Kolom", True),
-                'header_color': st.color_picker("Warna Header", '#4F81BD'),
-                'freeze_header': st.checkbox("Freeze Header", True)
+                'header_color': st.color_picker("🎨 Warna Header", '#4F81BD'),
+                'freeze_header': st.checkbox("📌 Freeze Header", True)
             }
 
     # Main Content
@@ -97,9 +117,9 @@ if uploaded_file is not None:
                     st.write(f"- {warning}")
 
         # Preview
-        with st.expander("Preview Data"):
+        with st.expander("📊 Preview Data"):
             st.dataframe(processed_data.head(8), use_container_width=True)
             st.caption(f"Menampilkan 8 dari {len(processed_data)} baris")
 
 else:
-    st.info("Silahkan upload file CSV untuk memulai", icon="ℹ️")
+    st.info("📢 Silahkan upload file CSV untuk memulai")
