@@ -224,50 +224,50 @@ if uploaded_file is not None:
             
             if selected_columns:
                 with st.expander("Filter Data", expanded=True):
-    filters = {}
-    cols = st.columns(2)
-    for i, col in enumerate(selected_columns):
-        with cols[i % 2]:
-            # Perbaikan untuk kolom numerik
-            if pd.api.types.is_numeric_dtype(data[col]):
-                numeric_series = pd.to_numeric(data[col], errors='coerce').dropna()
-                
-                if not numeric_series.empty:
-                    min_val = float(numeric_series.min())
-                    max_val = float(numeric_series.max())
-                    
-                    # Handle min == max case
-                    if min_val == max_val:
-                        min_val -= 1
-                        max_val += 1
-                        
-                    selected_range = st.slider(
-                        f"**{col}**",
-                        min_val,
-                        max_val,
-                        (min_val, max_val),
-                        key=f"slider_{col}"
-                    )
-                    filters[col] = {
-                        'type': 'numeric',
-                        'min': selected_range[0],
-                        'max': selected_range[1]
-                    }
-                else:
-                    st.warning(f"Kolom {col} tidak mengandung data numerik valid")
-                    filters[col] = {'type': 'numeric', 'min': 0, 'max': 0}
-            else:
-                unique_vals = data[col].unique().tolist()
-                selected_vals = st.multiselect(
-                    f"**{col}**",
-                    unique_vals,
-                    default=unique_vals,
-                    key=f"select_{col}"
-                )
-                filters[col] = {
-                    'type': 'categorical',
-                    'values': selected_vals
-                }
+                    filters = {}
+                    cols = st.columns(2)
+                    for i, col in enumerate(selected_columns):
+                        with cols[i % 2]:
+                            # Perbaikan untuk kolom numerik
+                            if pd.api.types.is_numeric_dtype(data[col]):
+                                numeric_series = pd.to_numeric(data[col], errors='coerce').dropna()
+                                
+                                if not numeric_series.empty:
+                                    min_val = float(numeric_series.min())
+                                    max_val = float(numeric_series.max())
+                                    
+                                    # Handle min == max case
+                                    if min_val == max_val:
+                                        min_val -= 1
+                                        max_val += 1
+                                        
+                                    selected_range = st.slider(
+                                        f"**{col}**",
+                                        min_val,
+                                        max_val,
+                                        (min_val, max_val),
+                                        key=f"slider_{col}"
+                                    )
+                                    filters[col] = {
+                                        'type': 'numeric',
+                                        'min': selected_range[0],
+                                        'max': selected_range[1]
+                                    }
+                                else:
+                                    st.warning(f"Kolom {col} tidak mengandung data numerik valid")
+                                    filters[col] = {'type': 'numeric', 'min': 0, 'max': 0}
+                            else:
+                                unique_vals = data[col].unique().tolist()
+                                selected_vals = st.multiselect(
+                                    f"**{col}**",
+                                    unique_vals,
+                                    default=unique_vals,
+                                    key=f"select_{col}"
+                                )
+                                filters[col] = {
+                                    'type': 'categorical',
+                                    'values': selected_vals
+                                }
 
         with col2:
             # Tanggal dan Export
