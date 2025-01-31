@@ -25,7 +25,7 @@ def read_csv_with_encoding(uploaded_file):
     # Baca file untuk deteksi encoding
     raw_data = uploaded_file.read()
     result = chardet.detect(raw_data)
-    encoding = result['encoding']
+    detected_encoding = result['encoding']  # Simpan encoding yang terdeteksi
     uploaded_file.seek(0)
 
     # Daftar delimiter yang mungkin
@@ -37,19 +37,19 @@ def read_csv_with_encoding(uploaded_file):
             uploaded_file.seek(0)
             data = pd.read_csv(
                 uploaded_file,
-                encoding=encoding,
+                encoding=detected_encoding,
                 delimiter=delimiter,
                 engine='python',
                 on_bad_lines='skip'
             )
             if not data.empty:
                 st.session_state.delimiter = delimiter  # Simpan delimiter yang berhasil
-                return data
+                return data, detected_encoding  # Kembalikan data dan encoding
         except Exception as e:
             continue
 
     # Jika semua gagal
-    st.error(f"Gagal membaca file CSV. Pastikan:\n1. Encoding file benar ({encoding})\n2. Delimiter konsisten\n3. Tidak ada baris yang rusak")
+    st.error(f"Gagal membaca file CSV. Pastikan:\n1. Encoding file benar ({detected_encoding})\n2. Delimiter konsisten\n3. Tidak ada baris yang rusak")
     st.stop()
 
 # UI Streamlit
@@ -62,10 +62,10 @@ uploaded_file = st.file_uploader("Upload CSV", type=["csv"], help="Upload file C
 if uploaded_file is not None:
     try:
         # Baca file dengan penanganan error
-        data = read_csv_with_encoding(uploaded_file)
+        data, detected_encoding = read_csv_with_encoding(uploaded_file)  # Terima data dan encoding
         
         # Tampilkan informasi file
-        st.success(f"File berhasil dibaca dengan encoding {data.encoding} dan delimiter '{st.session_state.get('delimiter', 'auto')}'")
+        st.success(f"File berhasil dibaca dengan encoding {detected_encoding} dan delimiter '{st.session_state.get('delimiter', 'auto')}'")
         
         # Lanjutkan proses
         all_columns = data.columns.tolist()
