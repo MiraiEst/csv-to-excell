@@ -347,7 +347,7 @@ if uploaded_file is not None:
                         # Cek apakah ada data yang akan di-export
                         if len(processed_data) == 0:
                             st.error("Tidak ada data yang bisa di-export setelah proses filtering!")
-                            return
+                            st.stop()
                         
                         # Cek nama kolom final
                         st.write("Preview Data yang akan di-export:")
