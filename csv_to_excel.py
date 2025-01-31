@@ -1,25 +1,56 @@
 import pandas as pd
 import streamlit as st
 import io
-import chardet  # Library untuk mendeteksi encoding
+import chardet
+from datetime import datetime
 
-# Fungsi untuk membaca file CSV dengan encoding yang sesuai
+# Fungsi untuk validasi data
+def validate_data(data):
+    warnings = []
+    # ... (kode validasi tetap sama)
+    return warnings
+
+# Fungsi untuk memproses data
+def process_data(data, selected_columns, cleaning_options, filters, date_settings):
+    # ... (kode proses tetap sama)
+    return processed_data
+
+# Fungsi untuk transformasi data
+def transform_data(data, output_format, column_mapping, excel_options):
+    # ... (kode transformasi tetap sama)
+    return output, mime_type, file_ext
+
+# Fungsi untuk membaca CSV dengan penanganan error
 def read_csv_with_encoding(uploaded_file):
-    # Baca file untuk mendeteksi encoding
+    # Baca file untuk deteksi encoding
     raw_data = uploaded_file.read()
     result = chardet.detect(raw_data)
     encoding = result['encoding']
-    
-    # Kembalikan pointer file ke awal
     uploaded_file.seek(0)
+
+    # Daftar delimiter yang mungkin
+    delimiters = [',', ';', '\t', '|']
     
-    # Coba baca file dengan encoding yang terdeteksi
-    try:
-        data = pd.read_csv(uploaded_file, encoding=encoding)
-        return data
-    except Exception as e:
-        st.error(f"Gagal membaca file CSV dengan encoding {encoding}. Error: {str(e)}")
-        st.stop()
+    # Coba berbagai kombinasi encoding dan delimiter
+    for delimiter in delimiters:
+        try:
+            uploaded_file.seek(0)
+            data = pd.read_csv(
+                uploaded_file,
+                encoding=encoding,
+                delimiter=delimiter,
+                engine='python',
+                on_bad_lines='skip'
+            )
+            if not data.empty:
+                st.session_state.delimiter = delimiter  # Simpan delimiter yang berhasil
+                return data
+        except Exception as e:
+            continue
+
+    # Jika semua gagal
+    st.error(f"Gagal membaca file CSV. Pastikan:\n1. Encoding file benar ({encoding})\n2. Delimiter konsisten\n3. Tidak ada baris yang rusak")
+    st.stop()
 
 # UI Streamlit
 st.set_page_config(page_title="Data Exporter", layout="centered")
@@ -30,11 +61,13 @@ uploaded_file = st.file_uploader("Upload CSV", type=["csv"], help="Upload file C
 
 if uploaded_file is not None:
     try:
-        # Baca file CSV dengan encoding yang sesuai
+        # Baca file dengan penanganan error
         data = read_csv_with_encoding(uploaded_file)
-        st.success("File CSV berhasil dibaca!")
         
-        # Lanjutkan dengan proses lainnya...
+        # Tampilkan informasi file
+        st.success(f"File berhasil dibaca dengan encoding {data.encoding} dan delimiter '{st.session_state.get('delimiter', 'auto')}'")
+        
+        # Lanjutkan proses
         all_columns = data.columns.tolist()
         
         # Sidebar Settings
@@ -57,7 +90,6 @@ if uploaded_file is not None:
 
         # Main Content
         col1, col2 = st.columns([3, 2])
-        
         with col1:
             # Kolom dan Filter
             selected_columns = st.multiselect("Pilih Kolom", all_columns, default=all_columns)
